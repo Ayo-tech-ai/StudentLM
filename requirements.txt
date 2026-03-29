@@ -10,7 +10,7 @@ langchain-huggingface==0.0.3
 # --- Embeddings ---
 sentence-transformers==2.7.0
 transformers==4.43.3
-torch>=2.5.0,<2.6.0   # ✅ compatible with Python 3.13
+torch # ✅ compatible with Python 3.13
 
 # --- Vector Store ---
 faiss-cpu==1.8.0
