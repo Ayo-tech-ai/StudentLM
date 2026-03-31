@@ -7,92 +7,36 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.vectorstores import FAISS
 
 # --- PAGE CONFIG ---
-st.set_page_config(
-    page_title="StudyLM - AI Study Companion",
-    page_icon="📚",
-    layout="wide",
-    initial_sidebar_state="collapsed"
-)
+st.set_page_config(page_title="StudyLM", page_icon="📘", layout="wide")
 
-# --- CUSTOM CSS (PRO UI) ---
+# --- CUSTOM CSS ---
 st.markdown("""
 <style>
-.stApp {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-}
-
-/* HEADER */
-.main-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    padding: 2rem;
-    border-radius: 20px;
-    margin-bottom: 2rem;
-    text-align: center;
-    color: white;
-    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
-}
-.main-header h1 {
-    font-size: 2.5rem;
-    margin-bottom: 0.5rem;
-}
-.main-header p {
-    font-size: 1.1rem;
-    opacity: 0.9;
-}
-
-/* CARDS */
+body { background-color: #0f172a; }
+.block-container { padding-top: 2rem; padding-bottom: 2rem; }
 .card {
-    background: white;
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
-    box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+    background-color: #1e293b;
+    padding: 20px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
 }
 .card-title {
-    font-size: 1.2rem;
-    font-weight: 600;
-    margin-bottom: 1rem;
-    border-left: 4px solid #667eea;
-    padding-left: 10px;
+    font-size: 20px;
+    font-weight: bold;
+    margin-bottom: 10px;
 }
-
-/* CONTENT */
-.content-box {
-    background: #f7fafc;
-    padding: 1.2rem;
-    border-radius: 10px;
-    line-height: 1.6;
-}
-
-/* BUTTONS */
-.stButton > button {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    border-radius: 8px;
-    border: none;
-    padding: 0.5rem;
-    font-weight: 500;
-}
-.stButton > button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(102,126,234,0.4);
-}
-
-/* CENTER CONTENT */
-.block-container {
-    max-width: 1100px;
-    margin: auto;
+button[kind="primary"] {
+    background-color: #2563eb !important;
+    color: white !important;
+    border-radius: 8px !important;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # --- HEADER ---
-st.markdown("""
-<div class="main-header">
-    <h1>📚 StudyLM</h1>
-    <p>Your AI-powered study companion. Learn smarter, not harder.</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("## 📘 StudyLM")
+st.caption("Your AI-powered study companion. Learn smarter, not harder.")
 
 # --- API ---
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -100,22 +44,18 @@ llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.3-70b-versatile")
 embeddings = HuggingFaceEmbeddings()
 
 # --- SESSION STATE ---
-if "retriever" not in st.session_state:
-    st.session_state.retriever = None
-if "doc_summary" not in st.session_state:
-    st.session_state.doc_summary = None
-if "sections" not in st.session_state:
-    st.session_state.sections = None
-if "selected_section" not in st.session_state:
-    st.session_state.selected_section = None
-if "mode" not in st.session_state:
-    st.session_state.mode = None
-if "mcqs" not in st.session_state:
-    st.session_state.mcqs = None
-if "user_answers" not in st.session_state:
-    st.session_state.user_answers = {}
-if "show_results" not in st.session_state:
-    st.session_state.show_results = False
+for key, default in {
+    "retriever": None,
+    "doc_summary": None,
+    "sections": None,
+    "selected_section": None,
+    "mode": None,
+    "mcqs": None,
+    "user_answers": {},
+    "show_results": False
+}.items():
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # --- FILE UPLOAD ---
 st.markdown('<div class="card"><div class="card-title">📂 Upload Document</div>', unsafe_allow_html=True)
@@ -153,109 +93,116 @@ if uploaded_file is not None:
     limited_docs = docs[:5]
     full_text = " ".join([doc.page_content for doc in limited_docs])
 
+    # --- SUMMARY ---
     if st.session_state.doc_summary is None:
         with st.spinner("Generating summary..."):
-            summary_prompt = f"""
-            Provide an academic summary of this document.
-            Include main topic, key arguments, concepts, and conclusions.
-            Document:
-            {full_text}
-            """
-            st.session_state.doc_summary = llm.invoke(summary_prompt).content
+            prompt = f"Provide an academic summary:\n{full_text}"
+            st.session_state.doc_summary = llm.invoke(prompt).content
 
+    # --- SECTIONS ---
     if st.session_state.sections is None:
         with st.spinner("Structuring document..."):
-            section_prompt = f"""
-            Divide this document into sections.
-            Format:
-            Title: ...
-            Content: ...
-            Document:
-            {full_text}
-            """
-            raw_sections = llm.invoke(section_prompt).content
+            prompt = f"Divide into sections:\n{full_text}"
+            raw = llm.invoke(prompt).content
 
             sections = []
-            parts = raw_sections.split("Title:")
+            parts = raw.split("Title:")
             for part in parts[1:]:
-                title_split = part.split("Content:")
-                if len(title_split) == 2:
+                split = part.split("Content:")
+                if len(split) == 2:
                     sections.append({
-                        "title": title_split[0].strip(),
-                        "content": title_split[1].strip()
+                        "title": split[0].strip(),
+                        "content": split[1].strip()
                     })
+
             st.session_state.sections = sections
 
-# --- SUMMARY ---
+# --- SUMMARY DISPLAY ---
 if st.session_state.doc_summary:
     st.markdown('<div class="card"><div class="card-title">📄 Academic Summary</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="content-box">{st.session_state.doc_summary}</div>', unsafe_allow_html=True)
+    st.write(st.session_state.doc_summary)
     st.markdown('</div>', unsafe_allow_html=True)
 
+    # --- MODES ---
     st.markdown("### 🎯 Choose Study Mode")
     col1, col2, col3, col4 = st.columns(4)
 
     if col1.button("📘 Learn"):
         st.session_state.mode = "learn"
+        st.rerun()
+
     if col2.button("🧠 Key Ideas"):
         st.session_state.mode = "key"
+        st.rerun()
+
     if col3.button("🎯 Practice"):
         st.session_state.mode = "practice"
+        st.session_state.mcqs = None
+        st.rerun()
+
     if col4.button("⚡ Exam Cram"):
         st.session_state.mode = "exam"
+        st.rerun()
 
-# --- SECTIONS ---
+# --- SECTION SELECT ---
 if st.session_state.sections:
     st.markdown('<div class="card"><div class="card-title">📚 Study Sections</div>', unsafe_allow_html=True)
 
-    section_titles = [sec["title"] for sec in st.session_state.sections]
-    selected = st.selectbox("Select a section:", section_titles)
+    titles = [sec["title"] for sec in st.session_state.sections]
 
-    for sec in st.session_state.sections:
-        if sec["title"] == selected:
-            st.session_state.selected_section = sec
+    selected_title = st.selectbox("Select a section:", titles)
+
+    # ✅ Stable mapping
+    st.session_state.selected_section = next(
+        sec for sec in st.session_state.sections if sec["title"] == selected_title
+    )
 
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- CONTENT ---
-if st.session_state.selected_section:
+# --- MAIN CONTENT ---
+if st.session_state.selected_section and st.session_state.mode:
     sec = st.session_state.selected_section
 
     st.markdown(f"## 📖 {sec['title']}")
 
+    # --- LEARN ---
     if st.session_state.mode == "learn":
         with st.spinner("Explaining..."):
             explanation = llm.invoke(f"Explain simply:\n{sec['content']}").content
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{explanation}</div>', unsafe_allow_html=True)
+        st.write(explanation)
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # --- KEY IDEAS ---
     elif st.session_state.mode == "key":
         with st.spinner("Extracting..."):
             points = llm.invoke(f"Give 5 key points:\n{sec['content']}").content
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{points}</div>', unsafe_allow_html=True)
+        st.write(points)
         st.markdown('</div>', unsafe_allow_html=True)
 
+    # --- PRACTICE ---
     elif st.session_state.mode == "practice":
+
         if st.session_state.mcqs is None:
             with st.spinner("Generating questions..."):
-                mcqs = llm.invoke(f"Generate 5 MCQs:\n{sec['content']}").content
-                st.session_state.mcqs = mcqs
+                st.session_state.mcqs = llm.invoke(f"Generate 5 MCQs:\n{sec['content']}").content
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{st.session_state.mcqs}</div>', unsafe_allow_html=True)
+        st.write(st.session_state.mcqs)
         st.markdown('</div>', unsafe_allow_html=True)
 
         if st.button("⚡ Revise with Exam Cram"):
             st.session_state.mode = "exam"
+            st.rerun()
 
+    # --- EXAM CRAM ---
     elif st.session_state.mode == "exam":
         with st.spinner("Generating notes..."):
             cram = llm.invoke(f"Create revision notes:\n{sec['content']}").content
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{cram}</div>', unsafe_allow_html=True)
+        st.write(cram)
         st.markdown('</div>', unsafe_allow_html=True)
 
         pdf = FPDF()
