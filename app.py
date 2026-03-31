@@ -1,3 +1,7 @@
+Okay, let me update my instruction. I want you to apply just the UI/UX in this code I gave you first into this app.py code. Now leave this app.py code exactly as it is for now. Just apply the UI/UX design to it.
+
+
+
 import os
 import streamlit as st
 from fpdf import FPDF
@@ -9,11 +13,16 @@ from langchain_community.vectorstores import FAISS
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="StudyLM", page_icon="📘", layout="wide")
 
-# --- CUSTOM CSS ---
+# --- CUSTOM CSS (UI MAGIC) ---
 st.markdown("""
 <style>
-body { background-color: #0f172a; }
-.block-container { padding-top: 2rem; padding-bottom: 2rem; }
+body {
+    background-color: #0f172a;
+}
+.block-container {
+    padding-top: 2rem;
+    padding-bottom: 2rem;
+}
 .card {
     background-color: #1e293b;
     padding: 20px;
@@ -41,21 +50,26 @@ st.caption("Your AI-powered study companion. Learn smarter, not harder.")
 # --- API ---
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.3-70b-versatile")
+
 embeddings = HuggingFaceEmbeddings()
 
 # --- SESSION STATE ---
-for key, default in {
-    "retriever": None,
-    "doc_summary": None,
-    "sections": None,
-    "selected_section": None,
-    "mode": None,
-    "mcqs": None,
-    "user_answers": {},
-    "show_results": False
-}.items():
-    if key not in st.session_state:
-        st.session_state[key] = default
+if "retriever" not in st.session_state:
+    st.session_state.retriever = None
+if "doc_summary" not in st.session_state:
+    st.session_state.doc_summary = None
+if "sections" not in st.session_state:
+    st.session_state.sections = None
+if "selected_section" not in st.session_state:
+    st.session_state.selected_section = None
+if "mode" not in st.session_state:
+    st.session_state.mode = None
+if "mcqs" not in st.session_state:
+    st.session_state.mcqs = None
+if "user_answers" not in st.session_state:
+    st.session_state.user_answers = {}
+if "show_results" not in st.session_state:
+    st.session_state.show_results = False
 
 # --- FILE UPLOAD ---
 st.markdown('<div class="card"><div class="card-title">📂 Upload Document</div>', unsafe_allow_html=True)
@@ -96,25 +110,36 @@ if uploaded_file is not None:
     # --- SUMMARY ---
     if st.session_state.doc_summary is None:
         with st.spinner("Generating summary..."):
-            prompt = f"Provide an academic summary:\n{full_text}"
-            st.session_state.doc_summary = llm.invoke(prompt).content
+            summary_prompt = f"""
+            Provide an academic summary of this document.
+            Include main topic, key arguments, concepts, and conclusions.
+            Document:
+            {full_text}
+            """
+            st.session_state.doc_summary = llm.invoke(summary_prompt).content
 
     # --- SECTIONS ---
     if st.session_state.sections is None:
         with st.spinner("Structuring document..."):
-            prompt = f"Divide into sections:\n{full_text}"
-            raw = llm.invoke(prompt).content
+            section_prompt = f"""
+            Divide this document into sections.
+            Format:
+            Title: ...
+            Content: ...
+            Document:
+            {full_text}
+            """
+            raw_sections = llm.invoke(section_prompt).content
 
             sections = []
-            parts = raw.split("Title:")
+            parts = raw_sections.split("Title:")
             for part in parts[1:]:
-                split = part.split("Content:")
-                if len(split) == 2:
+                title_split = part.split("Content:")
+                if len(title_split) == 2:
                     sections.append({
-                        "title": split[0].strip(),
-                        "content": split[1].strip()
+                        "title": title_split[0].strip(),
+                        "content": title_split[1].strip()
                     })
-
             st.session_state.sections = sections
 
 # --- SUMMARY DISPLAY ---
@@ -129,38 +154,28 @@ if st.session_state.doc_summary:
 
     if col1.button("📘 Learn"):
         st.session_state.mode = "learn"
-        st.rerun()
-
     if col2.button("🧠 Key Ideas"):
         st.session_state.mode = "key"
-        st.rerun()
-
     if col3.button("🎯 Practice"):
         st.session_state.mode = "practice"
-        st.session_state.mcqs = None
-        st.rerun()
-
     if col4.button("⚡ Exam Cram"):
         st.session_state.mode = "exam"
-        st.rerun()
 
 # --- SECTION SELECT ---
 if st.session_state.sections:
     st.markdown('<div class="card"><div class="card-title">📚 Study Sections</div>', unsafe_allow_html=True)
 
-    titles = [sec["title"] for sec in st.session_state.sections]
+    section_titles = [sec["title"] for sec in st.session_state.sections]
+    selected = st.selectbox("Select a section:", section_titles)
 
-    selected_title = st.selectbox("Select a section:", titles)
-
-    # ✅ Stable mapping
-    st.session_state.selected_section = next(
-        sec for sec in st.session_state.sections if sec["title"] == selected_title
-    )
+    for sec in st.session_state.sections:
+        if sec["title"] == selected:
+            st.session_state.selected_section = sec
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 # --- MAIN CONTENT ---
-if st.session_state.selected_section and st.session_state.mode:
+if st.session_state.selected_section:
     sec = st.session_state.selected_section
 
     st.markdown(f"## 📖 {sec['title']}")
@@ -186,7 +201,8 @@ if st.session_state.selected_section and st.session_state.mode:
 
         if st.session_state.mcqs is None:
             with st.spinner("Generating questions..."):
-                st.session_state.mcqs = llm.invoke(f"Generate 5 MCQs:\n{sec['content']}").content
+                mcqs = llm.invoke(f"Generate 5 MCQs:\n{sec['content']}").content
+                st.session_state.mcqs = mcqs
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
         st.write(st.session_state.mcqs)
@@ -194,7 +210,6 @@ if st.session_state.selected_section and st.session_state.mode:
 
         if st.button("⚡ Revise with Exam Cram"):
             st.session_state.mode = "exam"
-            st.rerun()
 
     # --- EXAM CRAM ---
     elif st.session_state.mode == "exam":
