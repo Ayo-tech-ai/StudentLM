@@ -1,7 +1,3 @@
-Okay, let me update my instruction. I want you to apply just the UI/UX in this code I gave you first into this app.py code. Now leave this app.py code exactly as it is for now. Just apply the UI/UX design to it.
-
-
-
 import os
 import streamlit as st
 from fpdf import FPDF
