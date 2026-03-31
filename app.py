@@ -9,113 +9,68 @@ from langchain_community.vectorstores import FAISS
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="StudyLM", page_icon="📘", layout="wide")
 
-# --- CUSTOM CSS (SKY BLUE UI) ---
+# --- SKY BLUE UI ---
 st.markdown("""
 <style>
 .stApp {
-    background: linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%);
+    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
 }
-
 .block-container {
     padding-top: 2rem;
-    padding-bottom: 2rem;
-    max-width: 1100px;
 }
-
-.header {
-    text-align: center;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
-}
-
-.header h1 {
-    font-size: 2.5rem;
-    color: #0f172a;
-    font-weight: 700;
-}
-
-.header p {
-    color: #475569;
-    font-size: 1.1rem;
-}
-
 .card {
     background: white;
     padding: 20px;
     border-radius: 14px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
-    border: 1px solid #e2e8f0;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.1);
 }
-
 .card-title {
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 20px;
+    font-weight: bold;
     margin-bottom: 10px;
-    color: #1e293b;
 }
-
 .stButton > button {
-    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    background: #0284c7;
     color: white;
-    border: none;
-    border-radius: 10px;
-    padding: 0.6rem;
-    font-weight: 500;
-    transition: 0.2s ease;
-}
-
-.stButton > button:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(14,165,233,0.4);
-}
-
-.stSelectbox > div > div {
-    border-radius: 10px;
-}
-
-.content-box {
-    line-height: 1.6;
-    font-size: 15px;
-    color: #1e293b;
+    border-radius: 8px;
+    width: 100%;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # --- HEADER ---
-st.markdown("""
-<div class="header">
-    <h1>📘 StudyLM</h1>
-    <p>Your AI-powered study companion. Learn smarter, not harder.</p>
-</div>
-""", unsafe_allow_html=True)
+st.markdown("## 📘 StudyLM")
+st.caption("Your AI-powered study companion. Learn smarter, not harder.")
 
 # --- API ---
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.3-70b-versatile")
-
 embeddings = HuggingFaceEmbeddings()
 
 # --- SESSION STATE ---
-if "retriever" not in st.session_state:
-    st.session_state.retriever = None
-if "doc_summary" not in st.session_state:
-    st.session_state.doc_summary = None
-if "sections" not in st.session_state:
-    st.session_state.sections = None
-if "selected_section" not in st.session_state:
-    st.session_state.selected_section = None
-if "mode" not in st.session_state:
-    st.session_state.mode = None
-if "mcqs" not in st.session_state:
-    st.session_state.mcqs = None
-if "user_answers" not in st.session_state:
-    st.session_state.user_answers = {}
-if "show_results" not in st.session_state:
+def reset_app():
+    keys = [
+        "retriever", "doc_summary", "sections", "selected_section",
+        "mode", "mcqs", "user_answers", "show_results"
+    ]
+    for k in keys:
+        st.session_state[k] = None if k != "user_answers" else {}
     st.session_state.show_results = False
 
+if "retriever" not in st.session_state:
+    reset_app()
+
+if "last_uploaded_file" not in st.session_state:
+    st.session_state.last_uploaded_file = None
+
+# --- RESET BUTTON ---
+if st.button("🔄 Start New Document"):
+    reset_app()
+    st.rerun()
+
 # --- FILE UPLOAD ---
-st.markdown('<div class="card"><div class="card-title">📂 Upload Your Study Material</div>', unsafe_allow_html=True)
+st.markdown('<div class="card"><div class="card-title">📂 Upload Document</div>', unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader(
     "Upload your course material (PDF, DOCX, TXT):",
@@ -124,7 +79,12 @@ uploaded_file = st.file_uploader(
 
 st.markdown('</div>', unsafe_allow_html=True)
 
+# --- AUTO RESET ON NEW FILE ---
 if uploaded_file is not None:
+    if st.session_state.last_uploaded_file != uploaded_file.name:
+        reset_app()
+        st.session_state.last_uploaded_file = uploaded_file.name
+
     temp_dir = "temp_uploads"
     os.makedirs(temp_dir, exist_ok=True)
     temp_file_path = os.path.join(temp_dir, uploaded_file.name)
@@ -132,6 +92,7 @@ if uploaded_file is not None:
     with open(temp_file_path, "wb") as f:
         f.write(uploaded_file.read())
 
+    # --- LOAD ---
     if uploaded_file.name.endswith(".pdf"):
         from langchain_community.document_loaders import PyPDFLoader
         loader = PyPDFLoader(temp_file_path)
@@ -188,12 +149,11 @@ if uploaded_file is not None:
 # --- SUMMARY DISPLAY ---
 if st.session_state.doc_summary:
     st.markdown('<div class="card"><div class="card-title">📄 Academic Summary</div>', unsafe_allow_html=True)
-    st.markdown(f'<div class="content-box">{st.session_state.doc_summary}</div>', unsafe_allow_html=True)
+    st.write(st.session_state.doc_summary)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # --- MODES ---
-    st.markdown('<div class="card"><div class="card-title">🎯 Choose Study Mode</div>', unsafe_allow_html=True)
-
+    st.markdown("### 🎯 Choose Study Mode")
     col1, col2, col3, col4 = st.columns(4)
 
     if col1.button("📘 Learn"):
@@ -205,25 +165,26 @@ if st.session_state.doc_summary:
     if col4.button("⚡ Exam Cram"):
         st.session_state.mode = "exam"
 
-    st.markdown('</div>', unsafe_allow_html=True)
-
 # --- SECTION SELECT ---
 if st.session_state.sections:
     st.markdown('<div class="card"><div class="card-title">📚 Study Sections</div>', unsafe_allow_html=True)
 
-    section_titles = [sec["title"] for sec in st.session_state.sections]
+    section_titles = ["📘 All Sections"] + [sec["title"] for sec in st.session_state.sections]
     selected = st.selectbox("Select a section:", section_titles)
 
-    for sec in st.session_state.sections:
-        if sec["title"] == selected:
-            st.session_state.selected_section = sec
+    if selected == "📘 All Sections":
+        combined = " ".join([sec["content"] for sec in st.session_state.sections])
+        st.session_state.selected_section = {"title": "All Sections", "content": combined}
+    else:
+        for sec in st.session_state.sections:
+            if sec["title"] == selected:
+                st.session_state.selected_section = sec
 
     st.markdown('</div>', unsafe_allow_html=True)
 
 # --- MAIN CONTENT ---
 if st.session_state.selected_section:
     sec = st.session_state.selected_section
-
     st.markdown(f"## 📖 {sec['title']}")
 
     # --- LEARN ---
@@ -231,7 +192,7 @@ if st.session_state.selected_section:
         with st.spinner("Explaining..."):
             explanation = llm.invoke(f"Explain simply:\n{sec['content']}").content
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{explanation}</div>', unsafe_allow_html=True)
+        st.write(explanation)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- KEY IDEAS ---
@@ -239,19 +200,18 @@ if st.session_state.selected_section:
         with st.spinner("Extracting..."):
             points = llm.invoke(f"Give 5 key points:\n{sec['content']}").content
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{points}</div>', unsafe_allow_html=True)
+        st.write(points)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- PRACTICE ---
     elif st.session_state.mode == "practice":
-
         if st.session_state.mcqs is None:
             with st.spinner("Generating questions..."):
                 mcqs = llm.invoke(f"Generate 5 MCQs:\n{sec['content']}").content
                 st.session_state.mcqs = mcqs
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{st.session_state.mcqs}</div>', unsafe_allow_html=True)
+        st.write(st.session_state.mcqs)
         st.markdown('</div>', unsafe_allow_html=True)
 
         if st.button("⚡ Revise with Exam Cram"):
@@ -263,7 +223,7 @@ if st.session_state.selected_section:
             cram = llm.invoke(f"Create revision notes:\n{sec['content']}").content
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown(f'<div class="content-box">{cram}</div>', unsafe_allow_html=True)
+        st.write(cram)
         st.markdown('</div>', unsafe_allow_html=True)
 
         pdf = FPDF()
