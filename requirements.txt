@@ -7,3 +7,4 @@ pypdf
 docx2txt
 sentence-transformers
 torch
+fpdf
