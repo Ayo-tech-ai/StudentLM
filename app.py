@@ -1,207 +1,173 @@
 import os
 import streamlit as st
+from fpdf import FPDF
 
 from langchain_groq import ChatGroq
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_openai import OpenAIEmbeddings
 from langchain_community.vectorstores import FAISS
 
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="AI Study Assistant", page_icon="📘")
 
 st.title("📘 AI Study Assistant")
-st.caption("Understand your course materials step-by-step. No shortcuts, just learning.")
+st.caption("Study smarter. Understand, practice, and revise effectively.")
 
 # --- API ---
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
 llm = ChatGroq(api_key=GROQ_API_KEY, model="llama-3.3-70b-versatile")
 
-embeddings = HuggingFaceEmbeddings()
+embeddings = OpenAIEmbeddings()
 
 # --- SESSION STATE ---
-if "retriever" not in st.session_state:
-    st.session_state.retriever = None
-
-if "doc_summary" not in st.session_state:
-    st.session_state.doc_summary = None
-
-if "sections" not in st.session_state:
-    st.session_state.sections = None
-
-if "selected_section" not in st.session_state:
-    st.session_state.selected_section = None
-
-if "quiz_question" not in st.session_state:
-    st.session_state.quiz_question = None
+for key in ["retriever", "doc_summary", "sections", "selected_section", "mode", "exam_cram"]:
+    if key not in st.session_state:
+        st.session_state[key] = None
 
 # --- FILE UPLOAD ---
-uploaded_file = st.file_uploader(
-    "Upload your course material (PDF, DOCX, TXT):",
-    type=["pdf", "docx", "txt"]
-)
+uploaded_file = st.file_uploader("Upload your course material:", type=["pdf", "docx", "txt"])
 
-if uploaded_file is not None:
-    temp_dir = "temp_uploads"
-    os.makedirs(temp_dir, exist_ok=True)
-    temp_file_path = os.path.join(temp_dir, uploaded_file.name)
-
-    with open(temp_file_path, "wb") as f:
+if uploaded_file:
+    temp_path = f"temp_{uploaded_file.name}"
+    with open(temp_path, "wb") as f:
         f.write(uploaded_file.read())
 
-    # --- LOAD DOCUMENT ---
+    # Load document
     if uploaded_file.name.endswith(".pdf"):
         from langchain_community.document_loaders import PyPDFLoader
-        loader = PyPDFLoader(temp_file_path)
-
+        loader = PyPDFLoader(temp_path)
     elif uploaded_file.name.endswith(".docx"):
         from langchain_community.document_loaders import Docx2txtLoader
-        loader = Docx2txtLoader(temp_file_path)
-
+        loader = Docx2txtLoader(temp_path)
     else:
         from langchain_community.document_loaders import TextLoader
-        loader = TextLoader(temp_file_path)
+        loader = TextLoader(temp_path)
 
     docs = loader.load()
-
-    # --- CREATE RETRIEVER ---
     st.session_state.retriever = FAISS.from_documents(docs, embeddings).as_retriever()
 
-    st.success(f"✅ Document '{uploaded_file.name}' loaded!")
+    full_text = " ".join([d.page_content for d in docs[:5]])
 
-    # --- LIMIT TEXT FOR PROCESSING ---
-    limited_docs = docs[:5]
-    full_text = " ".join([doc.page_content for doc in limited_docs])
+    # --- SUMMARY ---
+    if not st.session_state.doc_summary:
+        with st.spinner("Generating summary..."):
+            st.session_state.doc_summary = llm.invoke(f"""
+            Provide a concise academic summary.
 
-    # --- ACADEMIC SUMMARY ---
-    if st.session_state.doc_summary is None:
-        with st.spinner("Generating academic summary..."):
-            summary_prompt = f"""
-            Provide an academic summary of this document.
-
-            Include:
-            - Main topic
-            - Key arguments
-            - Important concepts
-            - Conclusions
-
-            Document:
             {full_text}
-            """
-            st.session_state.doc_summary = llm.invoke(summary_prompt).content
+            """).content
 
-    # --- SECTION EXTRACTION ---
-    if st.session_state.sections is None:
-        with st.spinner("Structuring document into sections..."):
-            section_prompt = f"""
-            Divide this document into clear learning sections.
+    # --- SECTIONS ---
+    if not st.session_state.sections:
+        with st.spinner("Structuring sections..."):
+            raw = llm.invoke(f"""
+            Divide into sections.
 
-            For each section:
-            - Give a short title
-            - Provide the content
-
-            Format strictly as:
+            Format:
             Title: ...
             Content: ...
 
-            Document:
             {full_text}
-            """
-            raw_sections = llm.invoke(section_prompt).content
+            """).content
 
-            # Simple parsing
             sections = []
-            parts = raw_sections.split("Title:")
-            for part in parts[1:]:
-                title_split = part.split("Content:")
-                if len(title_split) == 2:
-                    title = title_split[0].strip()
-                    content = title_split[1].strip()
-                    sections.append({"title": title, "content": content})
+            parts = raw.split("Title:")
+            for p in parts[1:]:
+                t, c = p.split("Content:")
+                sections.append({"title": t.strip(), "content": c.strip()})
 
             st.session_state.sections = sections
 
-# --- DISPLAY SUMMARY ---
+# --- SUMMARY DISPLAY ---
 if st.session_state.doc_summary:
     st.markdown("### 📄 Academic Summary")
     st.info(st.session_state.doc_summary)
 
-# --- SECTION NAVIGATION ---
+    # --- MODE BUTTONS ---
+    col1, col2, col3, col4 = st.columns(4)
+
+    if col1.button("📘 Learn"):
+        st.session_state.mode = "learn"
+
+    if col2.button("🧠 Key Ideas"):
+        st.session_state.mode = "key"
+
+    if col3.button("🎯 Practice"):
+        st.session_state.mode = "practice"
+
+    if col4.button("⚡ Exam Cram"):
+        st.session_state.mode = "exam"
+
+# --- SECTION SELECT ---
 if st.session_state.sections:
-    st.markdown("### 📚 Study by Sections")
+    titles = [s["title"] for s in st.session_state.sections]
+    selected = st.selectbox("Choose a section:", titles)
 
-    section_titles = [sec["title"] for sec in st.session_state.sections]
+    for s in st.session_state.sections:
+        if s["title"] == selected:
+            st.session_state.selected_section = s
 
-    selected = st.selectbox("Choose a section:", section_titles)
-
-    for sec in st.session_state.sections:
-        if sec["title"] == selected:
-            st.session_state.selected_section = sec
-
-# --- SECTION LEARNING MODES ---
+# --- MODES ---
 if st.session_state.selected_section:
     sec = st.session_state.selected_section
 
     st.markdown(f"## 📖 {sec['title']}")
 
-    mode = st.radio(
-        "Choose how you want to study:",
-        ["Understand", "Key Points", "Test Me"]
-    )
+    # --- LEARN ---
+    if st.session_state.mode == "learn":
+        with st.spinner("Teaching..."):
+            res = llm.invoke(f"Explain simply:\n{sec['content']}")
+            st.write(res.content)
 
-    # --- UNDERSTAND MODE ---
-    if mode == "Understand":
-        with st.spinner("Explaining..."):
-            explain_prompt = f"""
-            Explain this section like a lecturer teaching a beginner.
+    # --- KEY IDEAS ---
+    elif st.session_state.mode == "key":
+        with st.spinner("Extracting..."):
+            res = llm.invoke(f"Give 5 key bullet points:\n{sec['content']}")
+            st.write(res.content)
 
-            Use simple language and examples.
+    # --- PRACTICE ---
+    elif st.session_state.mode == "practice":
+        with st.spinner("Generating MCQs..."):
+            mcq = llm.invoke(f"""
+            Generate 3 MCQs with options A-D and correct answers.
 
-            Section:
             {sec['content']}
-            """
-            explanation = llm.invoke(explain_prompt).content
-            st.write(explanation)
+            """).content
 
-    # --- KEY POINTS ---
-    elif mode == "Key Points":
-        with st.spinner("Extracting key points..."):
-            key_prompt = f"""
-            Extract 5 key points from this section.
+        st.write(mcq)
 
-            Keep them short and clear.
+        # Learning Loop
+        st.markdown("---")
+        if st.button("⚡ Revise with Exam Cram"):
+            st.session_state.mode = "exam"
 
-            Section:
-            {sec['content']}
-            """
-            points = llm.invoke(key_prompt).content
-            st.write(points)
+    # --- EXAM CRAM ---
+    elif st.session_state.mode == "exam":
+        if not st.session_state.exam_cram:
+            with st.spinner("Creating revision notes..."):
+                cram = llm.invoke(f"""
+                Create exam revision notes:
 
-    # --- TEST MODE ---
-    elif mode == "Test Me":
+                - Key concepts
+                - Definitions
+                - Likely questions
 
-        if st.session_state.quiz_question is None:
-            with st.spinner("Generating question..."):
-                q_prompt = f"""
-                Generate 1 challenging question from this section.
-                """
-                st.session_state.quiz_question = llm.invoke(q_prompt).content
+                {sec['content']}
+                """).content
 
-        st.write("### ❓ Question")
-        st.write(st.session_state.quiz_question)
+                st.session_state.exam_cram = cram
 
-        user_answer = st.text_area("Your Answer:")
+        st.write(st.session_state.exam_cram)
 
-        if st.button("Submit Answer"):
-            with st.spinner("Evaluating..."):
-                eval_prompt = f"""
-                Question: {st.session_state.quiz_question}
+        # --- PDF DOWNLOAD ---
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
 
-                Student Answer: {user_answer}
+        for line in st.session_state.exam_cram.split("\n"):
+            pdf.multi_cell(0, 8, line)
 
-                Evaluate the answer.
-                Give feedback and correct explanation.
-                """
-                feedback = llm.invoke(eval_prompt).content
-                st.write("### 📊 Feedback")
-                st.write(feedback)
+        pdf_path = "exam_cram.pdf"
+        pdf.output(pdf_path)
 
-            st.session_state.quiz_question = None
+        with open(pdf_path, "rb") as f:
+            st.download_button("📥 Download PDF", f, file_name="exam_cram.pdf")
