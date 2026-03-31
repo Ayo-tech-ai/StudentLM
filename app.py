@@ -1,5 +1,6 @@
 import os
 import streamlit as st
+from fpdf import FPDF
 
 from langchain_groq import ChatGroq
 from langchain_community.embeddings import HuggingFaceEmbeddings
@@ -33,9 +34,18 @@ if "selected_section" not in st.session_state:
 if "quiz_question" not in st.session_state:
     st.session_state.quiz_question = None
 
-# NEW STATE (minimal addition)
 if "mode" not in st.session_state:
     st.session_state.mode = None
+
+# NEW STATES
+if "mcqs" not in st.session_state:
+    st.session_state.mcqs = None
+
+if "user_answers" not in st.session_state:
+    st.session_state.user_answers = {}
+
+if "show_results" not in st.session_state:
+    st.session_state.show_results = False
 
 # --- FILE UPLOAD ---
 uploaded_file = st.file_uploader(
@@ -127,7 +137,6 @@ if st.session_state.doc_summary:
     st.markdown("### 📄 Academic Summary")
     st.info(st.session_state.doc_summary)
 
-    # --- NEW COLUMN MODES ---
     col1, col2, col3, col4 = st.columns(4)
 
     if col1.button("📘 Learn"):
@@ -147,7 +156,6 @@ if st.session_state.sections:
     st.markdown("### 📚 Study by Sections")
 
     section_titles = [sec["title"] for sec in st.session_state.sections]
-
     selected = st.selectbox("Choose a section:", section_titles)
 
     for sec in st.session_state.sections:
@@ -188,25 +196,97 @@ if st.session_state.selected_section:
             points = llm.invoke(key_prompt).content
             st.write(points)
 
-    # --- PRACTICE (MCQ) ---
+    # --- PRACTICE (INTERACTIVE MCQ) ---
     elif st.session_state.mode == "practice":
-        with st.spinner("Generating MCQs..."):
-            mcq_prompt = f"""
-            Generate 3 multiple choice questions from this section.
 
-            Each should have:
-            - Question
-            - Options A-D
-            - Correct answer
-            - Short explanation
-            """
-            mcqs = llm.invoke(mcq_prompt).content
-            st.write(mcqs)
+        if st.session_state.mcqs is None:
+            with st.spinner("Generating questions..."):
+                mcq_prompt = f"""
+                Generate exactly 5 multiple choice questions from the section below.
 
-        # --- LEARNING LOOP ---
-        st.markdown("---")
-        if st.button("⚡ Revise with Exam Cram"):
-            st.session_state.mode = "exam"
+                Format strictly as:
+
+                Question: ...
+                A) ...
+                B) ...
+                C) ...
+                D) ...
+                Answer: ...
+                Explanation: ...
+
+                Section:
+                {sec['content']}
+                """
+                raw_mcqs = llm.invoke(mcq_prompt).content
+
+                questions = raw_mcqs.split("Question:")
+                mcqs = []
+
+                for q in questions[1:]:
+                    lines = q.strip().split("\n")
+                    question_text = lines[0]
+
+                    options = {}
+                    answer = ""
+                    explanation = ""
+
+                    for line in lines:
+                        if line.startswith("A)"):
+                            options["A"] = line[2:].strip()
+                        elif line.startswith("B)"):
+                            options["B"] = line[2:].strip()
+                        elif line.startswith("C)"):
+                            options["C"] = line[2:].strip()
+                        elif line.startswith("D)"):
+                            options["D"] = line[2:].strip()
+                        elif line.startswith("Answer:"):
+                            answer = line.replace("Answer:", "").strip()
+                        elif line.startswith("Explanation:"):
+                            explanation = line.replace("Explanation:", "").strip()
+
+                    mcqs.append({
+                        "question": question_text,
+                        "options": options,
+                        "answer": answer,
+                        "explanation": explanation
+                    })
+
+                st.session_state.mcqs = mcqs
+
+        st.markdown("### 🎯 Practice Questions")
+
+        for i, q in enumerate(st.session_state.mcqs):
+            st.markdown(f"**Q{i+1}. {q['question']}**")
+
+            choice = st.radio(
+                f"Select answer for Q{i+1}",
+                options=["A", "B", "C", "D"],
+                key=f"q_{i}"
+            )
+
+            st.session_state.user_answers[i] = choice
+
+        if st.button("Submit Answers"):
+            st.session_state.show_results = True
+
+        if st.session_state.show_results:
+            st.markdown("## 📊 Results")
+
+            for i, q in enumerate(st.session_state.mcqs):
+                user_ans = st.session_state.user_answers.get(i)
+                correct = q["answer"]
+
+                if user_ans == correct:
+                    st.success(f"Q{i+1}: Correct ✅")
+                else:
+                    st.error(f"Q{i+1}: Incorrect ❌")
+
+                st.write(f"**Correct Answer:** {correct}")
+                st.write(f"**Explanation:** {q['explanation']}")
+                st.markdown("---")
+
+            if st.button("⚡ Revise with Exam Cram"):
+                st.session_state.mode = "exam"
 
     # --- EXAM CRAM ---
     elif st.session_state.mode == "exam":
@@ -226,4 +306,23 @@ if st.session_state.selected_section:
             {sec['content']}
             """
             cram = llm.invoke(cram_prompt).content
-            st.write(cram)
+
+        st.write(cram)
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+
+        for line in cram.split("\n"):
+            pdf.multi_cell(0, 8, line)
+
+        pdf_file = "exam_cram.pdf"
+        pdf.output(pdf_file)
+
+        with open(pdf_file, "rb") as f:
+            st.download_button(
+                "📥 Download Exam Cram PDF",
+                f,
+                file_name="exam_cram.pdf",
+                mime="application/pdf"
+            )
