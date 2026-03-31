@@ -9,39 +9,86 @@ from langchain_community.vectorstores import FAISS
 # --- PAGE CONFIG ---
 st.set_page_config(page_title="StudyLM", page_icon="📘", layout="wide")
 
-# --- CUSTOM CSS (UI MAGIC) ---
+# --- CUSTOM CSS (SKY BLUE UI) ---
 st.markdown("""
 <style>
-body {
-    background-color: #0f172a;
+.stApp {
+    background: linear-gradient(135deg, #e0f2fe 0%, #f8fafc 100%);
 }
+
 .block-container {
     padding-top: 2rem;
     padding-bottom: 2rem;
+    max-width: 1100px;
 }
+
+.header {
+    text-align: center;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.header h1 {
+    font-size: 2.5rem;
+    color: #0f172a;
+    font-weight: 700;
+}
+
+.header p {
+    color: #475569;
+    font-size: 1.1rem;
+}
+
 .card {
-    background-color: #1e293b;
+    background: white;
     padding: 20px;
-    border-radius: 12px;
+    border-radius: 14px;
     margin-bottom: 20px;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    box-shadow: 0 4px 20px rgba(0,0,0,0.05);
+    border: 1px solid #e2e8f0;
 }
+
 .card-title {
-    font-size: 20px;
-    font-weight: bold;
+    font-size: 18px;
+    font-weight: 600;
     margin-bottom: 10px;
+    color: #1e293b;
 }
-button[kind="primary"] {
-    background-color: #2563eb !important;
-    color: white !important;
-    border-radius: 8px !important;
+
+.stButton > button {
+    background: linear-gradient(135deg, #38bdf8, #0ea5e9);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    padding: 0.6rem;
+    font-weight: 500;
+    transition: 0.2s ease;
+}
+
+.stButton > button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(14,165,233,0.4);
+}
+
+.stSelectbox > div > div {
+    border-radius: 10px;
+}
+
+.content-box {
+    line-height: 1.6;
+    font-size: 15px;
+    color: #1e293b;
 }
 </style>
 """, unsafe_allow_html=True)
 
 # --- HEADER ---
-st.markdown("## 📘 StudyLM")
-st.caption("Your AI-powered study companion. Learn smarter, not harder.")
+st.markdown("""
+<div class="header">
+    <h1>📘 StudyLM</h1>
+    <p>Your AI-powered study companion. Learn smarter, not harder.</p>
+</div>
+""", unsafe_allow_html=True)
 
 # --- API ---
 GROQ_API_KEY = st.secrets["GROQ_API_KEY"]
@@ -68,7 +115,7 @@ if "show_results" not in st.session_state:
     st.session_state.show_results = False
 
 # --- FILE UPLOAD ---
-st.markdown('<div class="card"><div class="card-title">📂 Upload Document</div>', unsafe_allow_html=True)
+st.markdown('<div class="card"><div class="card-title">📂 Upload Your Study Material</div>', unsafe_allow_html=True)
 
 uploaded_file = st.file_uploader(
     "Upload your course material (PDF, DOCX, TXT):",
@@ -141,11 +188,12 @@ if uploaded_file is not None:
 # --- SUMMARY DISPLAY ---
 if st.session_state.doc_summary:
     st.markdown('<div class="card"><div class="card-title">📄 Academic Summary</div>', unsafe_allow_html=True)
-    st.write(st.session_state.doc_summary)
+    st.markdown(f'<div class="content-box">{st.session_state.doc_summary}</div>', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # --- MODES ---
-    st.markdown("### 🎯 Choose Study Mode")
+    st.markdown('<div class="card"><div class="card-title">🎯 Choose Study Mode</div>', unsafe_allow_html=True)
+
     col1, col2, col3, col4 = st.columns(4)
 
     if col1.button("📘 Learn"):
@@ -156,6 +204,8 @@ if st.session_state.doc_summary:
         st.session_state.mode = "practice"
     if col4.button("⚡ Exam Cram"):
         st.session_state.mode = "exam"
+
+    st.markdown('</div>', unsafe_allow_html=True)
 
 # --- SECTION SELECT ---
 if st.session_state.sections:
@@ -181,7 +231,7 @@ if st.session_state.selected_section:
         with st.spinner("Explaining..."):
             explanation = llm.invoke(f"Explain simply:\n{sec['content']}").content
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.write(explanation)
+        st.markdown(f'<div class="content-box">{explanation}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- KEY IDEAS ---
@@ -189,7 +239,7 @@ if st.session_state.selected_section:
         with st.spinner("Extracting..."):
             points = llm.invoke(f"Give 5 key points:\n{sec['content']}").content
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.write(points)
+        st.markdown(f'<div class="content-box">{points}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
     # --- PRACTICE ---
@@ -201,7 +251,7 @@ if st.session_state.selected_section:
                 st.session_state.mcqs = mcqs
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.write(st.session_state.mcqs)
+        st.markdown(f'<div class="content-box">{st.session_state.mcqs}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
         if st.button("⚡ Revise with Exam Cram"):
@@ -213,7 +263,7 @@ if st.session_state.selected_section:
             cram = llm.invoke(f"Create revision notes:\n{sec['content']}").content
 
         st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.write(cram)
+        st.markdown(f'<div class="content-box">{cram}</div>', unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
         pdf = FPDF()
